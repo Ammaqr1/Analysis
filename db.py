@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import psycopg
 from dotenv import load_dotenv
-from prisma import Prisma
+# from prisma import Prisma
 from prisma.errors import UniqueViolationError
 from psycopg.rows import dict_row
 
@@ -69,49 +69,7 @@ def run_prisma(coro):
     return asyncio.run(coro)
 
 
-async def _create_auth_user(email: str, password_hash: str, name: str | None):
-    db = Prisma()
-    await db.connect()
-    try:
-        return await db.user.create(
-            data={
-                "email": email,
-                "passwordHash": password_hash,
-                "name": name,
-            }
-        )
-    finally:
-        await db.disconnect()
 
-
-def create_auth_user(email: str, password_hash: str, name: str | None):
-    return run_prisma(_create_auth_user(email, password_hash, name))
-
-
-async def _find_user_by_email(email: str):
-    db = Prisma()
-    await db.connect()
-    try:
-        return await db.user.find_unique(where={"email": email})
-    finally:
-        await db.disconnect()
-
-
-def find_user_by_email(email: str):
-    return run_prisma(_find_user_by_email(email))
-
-# async def get_user():
-    # db = Prisma()
-    # await db.connect()
-    # found = await db.user.find_many(
-    #     where={
-    #         "name": "akhil",
-    #     }
-    # )
-    # print(f"Found {len(found)} posts:")
-    # print(f"found id:: {found[0].id}")
-    # await db.disconnect()
-    # return found
 
 def _payload_data_for_order_execution(
     started_time: str,
