@@ -1,0 +1,6 @@
+pandas
+streamlit==1.31.0
+python-dotenv==1.1.1
+retrying
+prisma
+psycopg[binary]>=3.2
