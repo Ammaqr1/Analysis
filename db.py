@@ -10,7 +10,7 @@ from uuid import uuid4
 import psycopg
 from dotenv import load_dotenv
 # from prisma import Prisma
-from prisma.errors import UniqueViolationError
+# from prisma.errors import UniqueViolationError
 from psycopg.rows import dict_row
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
