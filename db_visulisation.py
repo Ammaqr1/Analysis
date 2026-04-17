@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import date, datetime
 
 import pandas as pd
 import streamlit as st
@@ -84,6 +85,7 @@ def build_session_view(
 
 
 EXEC_SUMMARY_COLS = [
+    "createdAt",
     "started_time",
     "at_the_money_time",
     "at_the_money_price",
@@ -95,7 +97,55 @@ EXEC_SUMMARY_COLS = [
     "high_price_time_ce",
     "high_price_pe",
     "high_price_time_pe",
+    "high_price_start_time",
+    "high_price_end_time",
 ]
+
+
+def _exec_created_at_date(row: dict) -> date | None:
+    """Parse DataForOrderExecution.createdAt for date-range filtering."""
+    v = row.get("createdAt")
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return None
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
+        except ValueError:
+            pass
+        try:
+            return datetime.strptime(s[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+    return None
+
+
+def _filter_sessions_by_exec_created_at(
+    sessions: list[tuple[dict, list[dict], list[dict]]],
+    start_d: date,
+    end_d: date,
+    include_orphan_linked: bool,
+) -> list[tuple[dict, list[dict], list[dict]]]:
+    """Keep sessions whose execution row's createdAt falls in [start_d, end_d]."""
+    out: list[tuple[dict, list[dict], list[dict]]] = []
+    for ex, buys, sells in sessions:
+        if ex.get("note") == "Orphan link (no matching DataForOrderExecution row)":
+            if include_orphan_linked:
+                out.append((ex, buys, sells))
+            continue
+        d = _exec_created_at_date(ex)
+        if d is None:
+            out.append((ex, buys, sells))
+            continue
+        if start_d <= d <= end_d:
+            out.append((ex, buys, sells))
+    return out
 
 BUY_DISPLAY_COLS = [
     "createdAt",
@@ -164,7 +214,8 @@ def render_linked_overview_tab(
     st.subheader("Sessions: execution snapshot → buy & sell legs")
     st.caption(
         "Each block is one `DataForOrderExecution` row with orders that reference it via "
-        "`dataForOrderExecutionId`."
+        "`dataForOrderExecutionId`. Filter uses `createdAt` on each execution row "
+        "(same source as `get_data_for_order_execution_sync`)."
     )
 
     if not exec_rows and not buy_rows and not sell_rows:
@@ -179,7 +230,48 @@ def render_linked_overview_tab(
         st.info("No sessions to show.")
         return
 
-    st.metric("Execution snapshots", len(exec_rows))
+    exec_dates = [
+        d for r in exec_rows if (d := _exec_created_at_date(r)) is not None
+    ]
+    if exec_dates:
+        default_min, default_max = min(exec_dates), max(exec_dates)
+    else:
+        default_min = default_max = date.today()
+
+    f1, f2, f3 = st.columns([1, 1, 2])
+    with f1:
+        start_filter = st.date_input(
+            "Execution created from",
+            value=default_min,
+            min_value=default_min,
+            max_value=default_max,
+            key="linked_exec_created_from",
+        )
+    with f2:
+        end_filter = st.date_input(
+            "Execution created to",
+            value=default_max,
+            min_value=default_min,
+            max_value=default_max,
+            key="linked_exec_created_to",
+        )
+    with f3:
+        include_orphan_linked = st.checkbox(
+            "Include orphan-linked sessions (buy/sell points to missing execution row)",
+            value=True,
+            key="linked_include_orphan_exec",
+        )
+
+    start_d, end_d = start_filter, end_filter
+    if start_d > end_d:
+        st.warning("`from` is after `to`; swap or widen the range.")
+        start_d, end_d = end_d, start_d
+
+    sessions_filtered = _filter_sessions_by_exec_created_at(
+        sessions, start_d, end_d, include_orphan_linked
+    )
+
+    st.metric("Execution snapshots (DB total)", len(exec_rows))
     c1, c2, c3 = st.columns(3)
     with c1:
         st.metric("Buy rows (total)", len(buy_rows))
@@ -190,7 +282,41 @@ def render_linked_overview_tab(
         linked_sells = len(sell_rows) - len(orphan_sells)
         st.metric("Linked buy / sell", f"{linked_buys} / {linked_sells}")
 
-    for i, (ex, buys, sells) in enumerate(sessions):
+    st.metric(
+        "Sessions in date range",
+        len(sessions_filtered),
+        help=f"Execution `createdAt` between {start_d} and {end_d} (inclusive).",
+    )
+
+    if not sessions_filtered:
+        st.info("No sessions match the selected `createdAt` range.")
+        if orphan_buys or orphan_sells:
+            st.divider()
+            st.subheader("Unlinked orders")
+            st.caption(
+                "Rows with empty `dataForOrderExecutionId` (legacy runs or manual inserts)."
+            )
+            if orphan_buys:
+                st.markdown("**Buy (unlinked)**")
+                st.dataframe(
+                    _project_columns(to_dataframe(orphan_buys), BUY_DISPLAY_COLS),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            if orphan_sells:
+                st.markdown("**Sell (unlinked)**")
+                df_orphan_sells = _project_columns(
+                    to_dataframe(orphan_sells), SELL_DISPLAY_COLS
+                )
+                df_orphan_sells = _with_sell_mode_indicator(df_orphan_sells)
+                st.dataframe(
+                    df_orphan_sells,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        return
+
+    for i, (ex, buys, sells) in enumerate(sessions_filtered):
         eid = ex.get("id", "?")
         title_bits = [
             str(ex.get("at_the_money_time", "—")),
@@ -201,11 +327,9 @@ def render_linked_overview_tab(
         label = f"Session {i + 1}: {' · '.join(title_bits)} | id {eid_short}"
 
         with st.expander(label, expanded=(i == 0)):
-            summary = {k: ex.get(k, "—") for k in EXEC_SUMMARY_COLS if k in ex}
+            summary = {k: ex.get(k, "—") for k in EXEC_SUMMARY_COLS}
             if ex.get("note"):
                 summary["note"] = ex["note"]
-            if not summary:
-                summary = {k: ex.get(k, "—") for k in sorted(ex.keys()) if k != "id"}
             st.markdown("**Execution snapshot**")
             st.table(pd.DataFrame([summary]).T.rename(columns={0: "value"}))
 
