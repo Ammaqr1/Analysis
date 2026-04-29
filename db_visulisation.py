@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -14,6 +15,37 @@ st.set_page_config(page_title="Trading DB Visualization", layout="wide")
 st.title("Trading Database Visualization")
 st.caption("Tables: SellOrderDetails, BuyOrderDetails, DataForOrderExecution")
 
+IST = ZoneInfo("Asia/Kolkata")
+
+
+def _parse_dt(value: object) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+
+    # Treat naive datetimes as UTC since DB createdAt is UTC.
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+    return dt
+
+
+def _created_at_ist_display(value: object) -> str:
+    dt = _parse_dt(value)
+    if dt is None:
+        return str(value or "")
+    return dt.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+
 
 @st.cache_data(ttl=5)
 def load_table_data() -> tuple[list[dict], list[dict], list[dict]]:
@@ -21,6 +53,10 @@ def load_table_data() -> tuple[list[dict], list[dict], list[dict]]:
     sell_rows = get_sell_order_details_sync()
     buy_rows = get_buy_order_details_sync()
     exec_rows = get_data_for_order_execution_sync()
+    # Display execution createdAt in IST while keeping raw UTC for filtering.
+    for row in exec_rows:
+        row["_createdAt_raw"] = row.get("createdAt")
+        row["createdAt"] = _created_at_ist_display(row.get("_createdAt_raw"))
     return sell_rows, buy_rows, exec_rows
 
 
@@ -104,26 +140,13 @@ EXEC_SUMMARY_COLS = [
 
 def _exec_created_at_date(row: dict) -> date | None:
     """Parse DataForOrderExecution.createdAt for date-range filtering."""
-    v = row.get("createdAt")
-    if v is None:
+    v = row.get("_createdAt_raw", row.get("createdAt"))
+    dt = _parse_dt(v)
+    if dt is None:
+        if isinstance(v, date):
+            return v
         return None
-    if isinstance(v, datetime):
-        return v.date()
-    if isinstance(v, date):
-        return v
-    if isinstance(v, str):
-        s = v.strip()
-        if not s:
-            return None
-        try:
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
-        except ValueError:
-            pass
-        try:
-            return datetime.strptime(s[:10], "%Y-%m-%d").date()
-        except ValueError:
-            return None
-    return None
+    return dt.astimezone(IST).date()
 
 
 def _filter_sessions_by_exec_created_at(
