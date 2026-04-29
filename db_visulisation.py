@@ -53,6 +53,12 @@ def load_table_data() -> tuple[list[dict], list[dict], list[dict]]:
     sell_rows = get_sell_order_details_sync()
     buy_rows = get_buy_order_details_sync()
     exec_rows = get_data_for_order_execution_sync()
+    for row in sell_rows:
+        row["_createdAt_raw"] = row.get("createdAt")
+        row["createdAt"] = _created_at_ist_display(row.get("_createdAt_raw"))
+    for row in buy_rows:
+        row["_createdAt_raw"] = row.get("createdAt")
+        row["createdAt"] = _created_at_ist_display(row.get("_createdAt_raw"))
     # Display execution createdAt in IST while keeping raw UTC for filtering.
     for row in exec_rows:
         row["_createdAt_raw"] = row.get("createdAt")
