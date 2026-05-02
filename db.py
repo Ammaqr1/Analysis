@@ -602,15 +602,16 @@ def _save_user_credentials_pg(
     print(f"User ID: {user_id}")
     createdAt = datetime.now()
     updatedAt = datetime.now()
+    mode = "off"
     with _pg_connect() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
-                INSERT INTO "Credentials" ("id", "api_key", "api_secrets", "phone_no", "totp_bar_code", "pin_code", "createdAt", "updatedAt")
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
+                INSERT INTO "Credentials" ("id", "api_key", "api_secrets", "phone_no", "totp_bar_code", "pin_code", "createdAt", "updatedAt, mode")
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) 
                 RETURNING *
                 """,
-                (user_id, api_key, api_secrets, phone_no, totp_bar_code, pin_code, createdAt, updatedAt),
+                (user_id, api_key, api_secrets, phone_no, totp_bar_code, pin_code, createdAt, updatedAt, mode),
             )
             row = cur.fetchone()
             conn.commit()
