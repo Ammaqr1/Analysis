@@ -12,10 +12,12 @@ from dotenv import load_dotenv
 # from prisma import Prisma
 # from prisma.errors import UniqueViolationError
 from psycopg.rows import dict_row
+from cryptography.fernet import Fernet
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 access_token = os.getenv("access_token")
+FERNET_KEY = os.getenv("FERNET_KEY")
 
 
 def _pg_ipv4_hostaddr(hostname: str) -> str | None:
@@ -574,6 +576,48 @@ def get_sell_order_details_sync() -> list[dict]:
 def get_data_for_order_execution_sync() -> list[dict]:
     return _fetch_all_data_for_order_execution()
 
+async def save_user_credentials(
+    api_key: str, api_secrets: str, phone_no: str, totp_bar_code: str, pin_code: str
+) -> dict | None:
+    if not api_key:
+        raise ValueError("api_key is required")
+    if not api_secrets:
+        raise ValueError("api_secrets is required")
+    if not phone_no:
+        raise ValueError("phone_no is required")
+    if not totp_bar_code:
+        raise ValueError("totp_bar_code is required")
+    if not pin_code:
+        raise ValueError("pin_code is required")
+    return await asyncio.to_thread(
+        _save_user_credentials_pg, api_key, api_secrets, phone_no, totp_bar_code, pin_code
+    )
+
+
+
+def _save_user_credentials_pg(
+    api_key: str, api_secrets: str, phone_no: str, totp_bar_code: str, pin_code: str
+) -> dict | None:
+    user_id = str(uuid4())
+    print(f"User ID: {user_id}")
+    createdAt = datetime.now()
+    updatedAt = datetime.now()
+    with _pg_connect() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                INSERT INTO "Credentials" ("id", "api_key", "api_secrets", "phone_no", "totp_bar_code", "pin_code", "createdAt", "updatedAt")
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
+                RETURNING *
+                """,
+                (user_id, api_key, api_secrets, phone_no, totp_bar_code, pin_code, createdAt, updatedAt),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+
+
+
 __all__ = [
     "UniqueViolationError",
     "create_auth_user",
@@ -591,6 +635,17 @@ __all__ = [
     "get_sell_order_details_sync",
     "get_data_for_order_execution_sync",
 ]
+
+
+def encrypt_text(plain_text: str) -> str:
+    """
+    Encrypt UTF-8 text with Fernet and return token as ASCII string.
+    """
+    try:
+        token = Fernet(FERNET_KEY.encode("ascii")).encrypt(plain_text.encode("utf-8"))
+        return token.decode("ascii")
+    except Exception as exc:
+        raise ValueError(f"Failed to encrypt payload: {exc}") from exc
 
 
 if __name__ == "__main__":
@@ -617,4 +672,6 @@ if __name__ == "__main__":
         print("sell order details created")
 
     asyncio.run(_demo())
-    
+
+
+

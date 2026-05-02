@@ -15,6 +15,15 @@ st.set_page_config(page_title="Trading DB Visualization", layout="wide")
 st.title("Trading Database Visualization")
 st.caption("Tables: SellOrderDetails, BuyOrderDetails, DataForOrderExecution")
 
+nav_cols = st.columns([1, 3])
+with nav_cols[0]:
+    if st.button("Save credentials", type="secondary", key="open_credentials_page"):
+        st.switch_page("pages/1_Credentials.py")
+with nav_cols[1]:
+    st.caption("Opens a separate page to insert broker credentials into `Credentials`.")
+
+st.divider()
+
 IST = ZoneInfo("Asia/Kolkata")
 
 
