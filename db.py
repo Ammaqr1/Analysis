@@ -607,11 +607,11 @@ def _save_user_credentials_pg(
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
-                INSERT INTO "Credentials" ("id", "api_key", "api_secrets", "phone_no", "totp_bar_code", "pin_code", "createdAt", "updatedAt, mode")
+                INSERT INTO "Credentials" ("id", "api_key", "api_secrets", "phone_no", "totp_bar_code", "pin_code","mode", "createdAt", "updatedAt")
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) 
                 RETURNING *
                 """,
-                (user_id, api_key, api_secrets, phone_no, totp_bar_code, pin_code, createdAt, updatedAt, mode),
+                (user_id, api_key, api_secrets, phone_no, totp_bar_code, pin_code, mode, createdAt, updatedAt),
             )
             row = cur.fetchone()
             conn.commit()
@@ -651,26 +651,33 @@ def encrypt_text(plain_text: str) -> str:
 
 if __name__ == "__main__":
     async def _demo():
-        rows = await get_data_for_order_execution()
-        print(rows, "this is the data")
-        await create_sell_order_details(
-            trade_type="PAPER_TRADE",
-            user="ammar1",
-            order_id="123",
-            r_quantity="100",
-            mode="market",
-            stop_loss_price=100.235,
-            stop_loss_trigger_price=100.521115451515,
-            target_price=100.52111545,
-            target_trigger_price=100.52111545,
-            o_status="COMPLETED",
-            o_buyed_quantity=100.52111545,
-            m_quantity=100.52111545,
-            m_price=100.52111545,
-            m_result="COMPLETED",
-            m_buyed_quantity=100.52111545,
+        await save_user_credentials(
+            api_key="12345",
+            api_secrets="12345",
+            phone_no="12345",
+            totp_bar_code="12345",
+            pin_code="12345",
         )
-        print("sell order details created")
+        # rows = await get_data_for_order_execution()
+        # print(rows, "this is the data")
+        # await create_sell_order_details(
+        #     trade_type="PAPER_TRADE",
+        #     user="ammar1",
+        #     order_id="123",
+        #     r_quantity="100",
+        #     mode="market",
+        #     stop_loss_price=100.235,
+        #     stop_loss_trigger_price=100.521115451515,
+        #     target_price=100.52111545,
+        #     target_trigger_price=100.52111545,
+        #     o_status="COMPLETED",
+        #     o_buyed_quantity=100.52111545,
+        #     m_quantity=100.52111545,
+        #     m_price=100.52111545,
+        #     m_result="COMPLETED",
+        #     m_buyed_quantity=100.52111545,
+        # )
+        # print("sell order details created")
 
     asyncio.run(_demo())
 
