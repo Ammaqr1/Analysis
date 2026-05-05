@@ -7,7 +7,6 @@ import streamlit as st
 
 from db import (
     get_buy_order_details_sync,
-    get_credentials_sync,
     get_data_for_order_execution_sync,
     get_sell_order_details_sync,
 )
@@ -75,17 +74,6 @@ def load_table_data() -> tuple[list[dict], list[dict], list[dict]]:
         row["createdAt"] = _created_at_ist_display(row.get("_createdAt_raw"))
     return sell_rows, buy_rows, exec_rows
 
-
-@st.cache_data(ttl=5)
-def load_credentials_data() -> list[dict]:
-    """Broker credential rows for the Credentials tab."""
-    rows = get_credentials_sync()
-    for row in rows:
-        row["_createdAt_raw"] = row.get("createdAt")
-        row["createdAt"] = _created_at_ist_display(row.get("_createdAt_raw"))
-        row["_updatedAt_raw"] = row.get("updatedAt")
-        row["updatedAt"] = _created_at_ist_display(row.get("_updatedAt_raw"))
-    return rows
 
 
 CREDENTIALS_DISPLAY_COLS = [
@@ -441,11 +429,10 @@ if st.button("Refresh Data"):
     st.cache_data.clear()
 
 sell_rows, buy_rows, exec_rows = load_table_data()
-cred_rows = load_credentials_data()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
+
+tab2, tab3, tab4, tab5 = st.tabs(
     [
-        "Credentials",
         "sell_orderdetails",
         "BuyOrderDetails",
         "DataForOrderExecution",
@@ -453,15 +440,6 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
     ]
 )
 
-with tab1:
-    st.subheader("Credentials")
-    st.caption("Broker accounts keyed by `user` (name / label). Secrets remain stored encrypted in the database.")
-    df_cred = _project_columns(to_dataframe(cred_rows), CREDENTIALS_DISPLAY_COLS)
-    st.write(f"Total rows: {len(df_cred)}")
-    if df_cred.empty:
-        st.info("No credential rows found.")
-    else:
-        st.dataframe(df_cred, use_container_width=True, hide_index=True)
 
 with tab2:
     st.subheader("sell_orderdetails (SellOrderDetails)")
