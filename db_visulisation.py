@@ -7,13 +7,14 @@ import streamlit as st
 
 from db import (
     get_buy_order_details_sync,
+    get_credentials_sync,
     get_data_for_order_execution_sync,
     get_sell_order_details_sync,
 )
 
 st.set_page_config(page_title="Trading DB Visualization", layout="wide")
 st.title("Trading Database Visualization")
-st.caption("Tables: SellOrderDetails, BuyOrderDetails, DataForOrderExecution")
+st.caption("Tables: Credentials, SellOrderDetails, BuyOrderDetails, DataForOrderExecution")
 
 nav_cols = st.columns([1, 3])
 with nav_cols[0]:
@@ -73,6 +74,34 @@ def load_table_data() -> tuple[list[dict], list[dict], list[dict]]:
         row["_createdAt_raw"] = row.get("createdAt")
         row["createdAt"] = _created_at_ist_display(row.get("_createdAt_raw"))
     return sell_rows, buy_rows, exec_rows
+
+
+@st.cache_data(ttl=5)
+def load_credentials_data() -> list[dict]:
+    """Broker credential rows for the Credentials tab."""
+    rows = get_credentials_sync()
+    for row in rows:
+        row["_createdAt_raw"] = row.get("createdAt")
+        row["createdAt"] = _created_at_ist_display(row.get("_createdAt_raw"))
+        row["_updatedAt_raw"] = row.get("updatedAt")
+        row["updatedAt"] = _created_at_ist_display(row.get("_updatedAt_raw"))
+    return rows
+
+
+CREDENTIALS_DISPLAY_COLS = [
+    "user",
+    "id",
+    "mode",
+    "createdAt",
+    "updatedAt",
+    "access_token",
+    "last_updated_api_secrets",
+    "api_key",
+    "api_secrets",
+    "phone_no",
+    "totp_bar_code",
+    "pin_code",
+]
 
 
 def to_dataframe(rows: list[dict]) -> pd.DataFrame:
@@ -412,9 +441,11 @@ if st.button("Refresh Data"):
     st.cache_data.clear()
 
 sell_rows, buy_rows, exec_rows = load_table_data()
+cred_rows = load_credentials_data()
 
-tab1, tab2, tab3, tab4 = st.tabs(
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
     [
+        "Credentials",
         "sell_orderdetails",
         "BuyOrderDetails",
         "DataForOrderExecution",
@@ -423,6 +454,16 @@ tab1, tab2, tab3, tab4 = st.tabs(
 )
 
 with tab1:
+    st.subheader("Credentials")
+    st.caption("Broker accounts keyed by `user` (name / label). Secrets remain stored encrypted in the database.")
+    df_cred = _project_columns(to_dataframe(cred_rows), CREDENTIALS_DISPLAY_COLS)
+    st.write(f"Total rows: {len(df_cred)}")
+    if df_cred.empty:
+        st.info("No credential rows found.")
+    else:
+        st.dataframe(df_cred, use_container_width=True, hide_index=True)
+
+with tab2:
     st.subheader("sell_orderdetails (SellOrderDetails)")
     df_sell = to_dataframe(sell_rows)
     df_sell = _with_sell_mode_indicator(df_sell)
@@ -432,7 +473,7 @@ with tab1:
     else:
         st.dataframe(df_sell, use_container_width=True, hide_index=True)
 
-with tab2:
+with tab3:
     st.subheader("BuyOrderDetails")
     df_buy = to_dataframe(buy_rows)
     st.write(f"Total rows: {len(df_buy)}")
@@ -441,7 +482,7 @@ with tab2:
     else:
         st.dataframe(df_buy, use_container_width=True, hide_index=True)
 
-with tab3:
+with tab4:
     st.subheader("DataForOrderExecution")
     df_exec = to_dataframe(exec_rows)
     st.write(f"Total rows: {len(df_exec)}")
@@ -450,5 +491,5 @@ with tab3:
     else:
         st.dataframe(df_exec, use_container_width=True, hide_index=True)
 
-with tab4:
+with tab5:
     render_linked_overview_tab(exec_rows, buy_rows, sell_rows)

@@ -18,6 +18,7 @@ if st.button("← Back to Trading DB Visualization"):
     st.switch_page("db_visulisation.py")
 
 with st.form("credentials_form"):
+    user = st.text_input("User / account name", autocomplete="off")
     api_key = st.text_input("API key", autocomplete="off")
     api_secrets = st.text_input("API secret", type="password", autocomplete="off")
     phone_no = st.text_input("Phone number", autocomplete="off")
@@ -29,6 +30,7 @@ if submitted:
     try:
         row = asyncio.run(
             save_user_credentials(
+                user.strip(),
                 encrypt_text(api_key.strip()),
                 encrypt_text(api_secrets.strip()),
                 encrypt_text(phone_no.strip()),

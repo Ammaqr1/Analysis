@@ -576,8 +576,21 @@ def get_sell_order_details_sync() -> list[dict]:
 def get_data_for_order_execution_sync() -> list[dict]:
     return _fetch_all_data_for_order_execution()
 
+
+def _fetch_all_credentials() -> list[dict]:
+    """Read Credentials rows from Postgres."""
+    with _pg_connect() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute('SELECT * FROM "Credentials" ORDER BY "createdAt" DESC')
+            return [dict(row) for row in cur.fetchall()]
+
+
+def get_credentials_sync() -> list[dict]:
+    return _fetch_all_credentials()
+
+
 async def save_user_credentials(
-    api_key: str, api_secrets: str, phone_no: str, totp_bar_code: str, pin_code: str
+    user: str, api_key: str, api_secrets: str, phone_no: str, totp_bar_code: str, pin_code: str
 ) -> dict | None:
     if not api_key:
         raise ValueError("api_key is required")
@@ -589,14 +602,16 @@ async def save_user_credentials(
         raise ValueError("totp_bar_code is required")
     if not pin_code:
         raise ValueError("pin_code is required")
+    if not user:
+        raise ValueError("user is required")
     return await asyncio.to_thread(
-        _save_user_credentials_pg, api_key, api_secrets, phone_no, totp_bar_code, pin_code
+        _save_user_credentials_pg, user, api_key, api_secrets, phone_no, totp_bar_code, pin_code
     )
 
 
 
 def _save_user_credentials_pg(
-    api_key: str, api_secrets: str, phone_no: str, totp_bar_code: str, pin_code: str
+    user: str, api_key: str, api_secrets: str, phone_no: str, totp_bar_code: str, pin_code: str
 ) -> dict | None:
     user_id = str(uuid4())
     print(f"User ID: {user_id}")
@@ -607,14 +622,15 @@ def _save_user_credentials_pg(
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
-                INSERT INTO "Credentials" ("id", "api_key", "api_secrets", "phone_no", "totp_bar_code", "pin_code","mode", "createdAt", "updatedAt")
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) 
+                INSERT INTO "Credentials" ("id", "user", "api_key", "api_secrets", "phone_no", "totp_bar_code", "pin_code","mode", "createdAt", "updatedAt")
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
                 RETURNING *
                 """,
-                (user_id, api_key, api_secrets, phone_no, totp_bar_code, pin_code, mode, createdAt, updatedAt),
+                (user_id, user, api_key, api_secrets, phone_no, totp_bar_code, pin_code, mode, createdAt, updatedAt),
             )
             row = cur.fetchone()
             conn.commit()
+            print(f"User credentials saved: {row}")
             return dict(row) if row else None
 
 
@@ -635,6 +651,7 @@ __all__ = [
     "get_buy_order_details_sync",
     "get_sell_order_details_sync",
     "get_data_for_order_execution_sync",
+    "get_credentials_sync",
 ]
 
 
@@ -652,6 +669,7 @@ def encrypt_text(plain_text: str) -> str:
 if __name__ == "__main__":
     async def _demo():
         await save_user_credentials(
+            user="ammar1",
             api_key="12345",
             api_secrets="12345",
             phone_no="12345",
