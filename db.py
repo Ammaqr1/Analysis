@@ -589,6 +589,283 @@ def get_credentials_sync() -> list[dict]:
     return _fetch_all_credentials()
 
 
+def _ensure_strategy_table_pg(conn) -> None:
+    """Create Strategy table if Prisma migration has not created it yet."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS "Strategy" (
+                "id" TEXT PRIMARY KEY,
+                "createdAt" TIMESTAMP NOT NULL,
+                "updatedAt" TIMESTAMP NOT NULL,
+                "strategy_name" TEXT,
+                "week_day" TEXT,
+                "at_time_money" TEXT,
+                "start_time" TEXT,
+                "end_time" TEXT,
+                "end_entry_time" TEXT,
+                "exchange" TEXT,
+                "target_price" TEXT,
+                "stop_loss_price" TEXT,
+                "target_trigger_price_percentage" TEXT,
+                "stoploss_trigger_price_percentage" TEXT
+            )
+            """
+        )
+    conn.commit()
+
+
+def _fetch_all_strategy_names() -> list[str]:
+    """Read strategy names from either Strategy or legacy Stratergy table."""
+    with _pg_connect() as conn:
+        with conn.cursor() as cur:
+            # New schema
+            try:
+                cur.execute(
+                    """
+                    SELECT "strategy_name"
+                    FROM "Strategy"
+                    WHERE "strategy_name" IS NOT NULL AND TRIM("strategy_name") <> ''
+                    GROUP BY "strategy_name"
+                    ORDER BY MAX("createdAt") DESC
+                    """
+                )
+                return [row[0] for row in cur.fetchall()]
+            except psycopg.errors.UndefinedTable:
+                conn.rollback()
+
+            # Legacy schema (typo kept for backward compatibility)
+            try:
+                cur.execute(
+                    """
+                    SELECT "statergy_name"
+                    FROM "Stratergy"
+                    WHERE "statergy_name" IS NOT NULL AND TRIM("statergy_name") <> ''
+                    GROUP BY "statergy_name"
+                    ORDER BY MAX("createdAt") DESC
+                    """
+                )
+                return [row[0] for row in cur.fetchall()]
+            except psycopg.errors.UndefinedTable:
+                conn.rollback()
+
+        _ensure_strategy_table_pg(conn)
+        return []
+
+
+def get_strategy_names_sync() -> list[str]:
+    return _fetch_all_strategy_names()
+
+
+STRATEGY_MUTABLE_COLUMNS = [
+    "strategy_name",
+    "week_day",
+    "at_time_money",
+    "start_time",
+    "end_time",
+    "end_entry_time",
+    "exchange",
+    "target_price",
+    "stop_loss_price",
+    "target_trigger_price_percentage",
+    "stoploss_trigger_price_percentage",
+]
+
+STRATEGY_SELECT_COLUMNS = ["id", "createdAt", "updatedAt", *STRATEGY_MUTABLE_COLUMNS]
+
+
+def _strategy_payload(values: dict) -> dict:
+    return {
+        column: (str(values.get(column, "")).strip() or None)
+        for column in STRATEGY_MUTABLE_COLUMNS
+    }
+
+
+def _fetch_strategy_rows_pg(strategy_name: str | None = None) -> list[dict]:
+    with _pg_connect() as conn:
+        _ensure_strategy_table_pg(conn)
+        with conn.cursor(row_factory=dict_row) as cur:
+            columns_sql = ", ".join(f'"{column}"' for column in STRATEGY_SELECT_COLUMNS)
+            if strategy_name:
+                cur.execute(
+                    f"""
+                    SELECT {columns_sql}
+                    FROM "Strategy"
+                    WHERE "strategy_name" = %s
+                    ORDER BY "createdAt" DESC
+                    """,
+                    (strategy_name,),
+                )
+            else:
+                cur.execute(
+                    f"""
+                    SELECT {columns_sql}
+                    FROM "Strategy"
+                    ORDER BY "createdAt" DESC
+                    """
+                )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def get_strategy_rows_sync(strategy_name: str | None = None) -> list[dict]:
+    return _fetch_strategy_rows_pg(strategy_name)
+
+
+def _save_strategy_name_pg(strategy_name: str) -> dict | None:
+    row_id = str(uuid4())
+    created_at = datetime.now()
+    updated_at = datetime.now()
+    with _pg_connect() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            # New schema
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO "Strategy" ("id", "strategy_name", "createdAt", "updatedAt")
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING *
+                    """,
+                    (row_id, strategy_name, created_at, updated_at),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return dict(row) if row else None
+            except psycopg.errors.UndefinedTable:
+                conn.rollback()
+
+            # Legacy schema (typo kept for backward compatibility)
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO "Stratergy" ("id", "statergy_name", "createdAt", "updatedAt")
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING *
+                    """,
+                    (row_id, strategy_name, created_at, updated_at),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return dict(row) if row else None
+            except psycopg.errors.UndefinedTable:
+                conn.rollback()
+
+        _ensure_strategy_table_pg(conn)
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                INSERT INTO "Strategy" ("id", "strategy_name", "createdAt", "updatedAt")
+                VALUES (%s, %s, %s, %s)
+                RETURNING *
+                """,
+                (row_id, strategy_name, created_at, updated_at),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+
+
+async def save_strategy_name(strategy_name: str) -> dict | None:
+    strategy_name = strategy_name.strip()
+    if not strategy_name:
+        raise ValueError("strategy_name is required")
+    return await asyncio.to_thread(_save_strategy_name_pg, strategy_name)
+
+
+def _create_strategy_pg(values: dict) -> dict | None:
+    payload = _strategy_payload(values)
+    if not payload["strategy_name"]:
+        raise ValueError("strategy_name is required")
+
+    row_id = str(uuid4())
+    now = datetime.now()
+    with _pg_connect() as conn:
+        _ensure_strategy_table_pg(conn)
+        with conn.cursor(row_factory=dict_row) as cur:
+            columns = ["id", "createdAt", "updatedAt", *STRATEGY_MUTABLE_COLUMNS]
+            placeholders = ", ".join(["%s"] * len(columns))
+            columns_sql = ", ".join(f'"{column}"' for column in columns)
+            values_tuple = (
+                row_id,
+                now,
+                now,
+                *(payload[column] for column in STRATEGY_MUTABLE_COLUMNS),
+            )
+            cur.execute(
+                f"""
+                INSERT INTO "Strategy" ({columns_sql})
+                VALUES ({placeholders})
+                RETURNING *
+                """,
+                values_tuple,
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+
+
+async def create_strategy(values: dict) -> dict | None:
+    return await asyncio.to_thread(_create_strategy_pg, values)
+
+
+def _update_strategy_pg(strategy_id: str, values: dict) -> dict | None:
+    if not strategy_id:
+        raise ValueError("strategy id is required")
+
+    payload = _strategy_payload(values)
+    if not payload["strategy_name"]:
+        raise ValueError("strategy_name is required")
+
+    now = datetime.now()
+    set_sql = ", ".join(f'"{column}" = %s' for column in STRATEGY_MUTABLE_COLUMNS)
+    with _pg_connect() as conn:
+        _ensure_strategy_table_pg(conn)
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                f"""
+                UPDATE "Strategy"
+                SET {set_sql}, "updatedAt" = %s
+                WHERE "id" = %s
+                RETURNING *
+                """,
+                (
+                    *(payload[column] for column in STRATEGY_MUTABLE_COLUMNS),
+                    now,
+                    strategy_id,
+                ),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+
+
+async def update_strategy(strategy_id: str, values: dict) -> dict | None:
+    return await asyncio.to_thread(_update_strategy_pg, strategy_id, values)
+
+
+def _delete_strategy_pg(strategy_id: str) -> dict | None:
+    if not strategy_id:
+        raise ValueError("strategy id is required")
+
+    with _pg_connect() as conn:
+        _ensure_strategy_table_pg(conn)
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                DELETE FROM "Strategy"
+                WHERE "id" = %s
+                RETURNING *
+                """,
+                (strategy_id,),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return dict(row) if row else None
+
+
+async def delete_strategy(strategy_id: str) -> dict | None:
+    return await asyncio.to_thread(_delete_strategy_pg, strategy_id)
+
+
 async def save_user_credentials(
     user: str, api_key: str, api_secrets: str, phone_no: str, totp_bar_code: str, pin_code: str
 ) -> dict | None:
@@ -652,6 +929,12 @@ __all__ = [
     "get_sell_order_details_sync",
     "get_data_for_order_execution_sync",
     "get_credentials_sync",
+    "get_strategy_names_sync",
+    "get_strategy_rows_sync",
+    "save_strategy_name",
+    "create_strategy",
+    "update_strategy",
+    "delete_strategy",
 ]
 
 

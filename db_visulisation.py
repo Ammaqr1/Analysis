@@ -9,18 +9,24 @@ from db import (
     get_buy_order_details_sync,
     get_data_for_order_execution_sync,
     get_sell_order_details_sync,
+    get_strategy_names_sync,
 )
 
 st.set_page_config(page_title="Trading DB Visualization", layout="wide")
 st.title("Trading Database Visualization")
 st.caption("Tables: Credentials, SellOrderDetails, BuyOrderDetails, DataForOrderExecution")
 
-nav_cols = st.columns([1, 3])
+nav_cols = st.columns([1, 1, 3])
 with nav_cols[0]:
     if st.button("Save credentials", type="secondary", key="open_credentials_page"):
         st.switch_page("pages/1_Credentials.py")
 with nav_cols[1]:
-    st.caption("Opens a separate page to insert broker credentials into `Credentials`.")
+    if st.button("Save strategy", type="secondary", key="open_strategy_page"):
+        st.switch_page("pages/2_Strategy.py")
+with nav_cols[2]:
+    st.caption(
+        "Use separate pages to insert broker credentials (`Credentials`) and strategy names (`Strategy`)."
+    )
 
 st.divider()
 
@@ -57,11 +63,12 @@ def _created_at_ist_display(value: object) -> str:
 
 
 @st.cache_data(ttl=5)
-def load_table_data() -> tuple[list[dict], list[dict], list[dict]]:
-    """Load rows from Postgres via db.py helpers. Returns (sell, buy, execution)."""
+def load_table_data() -> tuple[list[dict], list[dict], list[dict], list[str]]:
+    """Load rows from Postgres via db.py helpers."""
     sell_rows = get_sell_order_details_sync()
     buy_rows = get_buy_order_details_sync()
     exec_rows = get_data_for_order_execution_sync()
+    strategy_names = get_strategy_names_sync()
     for row in sell_rows:
         row["_createdAt_raw"] = row.get("createdAt")
         row["createdAt"] = _created_at_ist_display(row.get("_createdAt_raw"))
@@ -72,7 +79,7 @@ def load_table_data() -> tuple[list[dict], list[dict], list[dict]]:
     for row in exec_rows:
         row["_createdAt_raw"] = row.get("createdAt")
         row["createdAt"] = _created_at_ist_display(row.get("_createdAt_raw"))
-    return sell_rows, buy_rows, exec_rows
+    return sell_rows, buy_rows, exec_rows, strategy_names
 
 
 
@@ -428,15 +435,16 @@ def render_linked_overview_tab(
 if st.button("Refresh Data"):
     st.cache_data.clear()
 
-sell_rows, buy_rows, exec_rows = load_table_data()
+sell_rows, buy_rows, exec_rows, strategy_names = load_table_data()
 
 
-tab2, tab3, tab4, tab5 = st.tabs(
+tab2, tab3, tab4, tab5, tab6 = st.tabs(
     [
         "sell_orderdetails",
         "BuyOrderDetails",
         "DataForOrderExecution",
         "Linked overview",
+        "Strategy names",
     ]
 )
 
@@ -471,3 +479,12 @@ with tab4:
 
 with tab5:
     render_linked_overview_tab(exec_rows, buy_rows, sell_rows)
+
+with tab6:
+    st.subheader("Strategy names")
+    st.write(f"Total strategy names: {len(strategy_names)}")
+    if not strategy_names:
+        st.info("No strategy names found.")
+    else:
+        for idx, strategy_name in enumerate(strategy_names, start=1):
+            st.write(f"{idx}. {strategy_name}")
