@@ -10,6 +10,7 @@ from db import (
     get_data_for_order_execution_sync,
     get_sell_order_details_sync,
     get_strategy_names_sync,
+    get_strategy_rows_sync,
 )
 
 st.set_page_config(page_title="Trading DB Visualization", layout="wide")
@@ -63,12 +64,13 @@ def _created_at_ist_display(value: object) -> str:
 
 
 @st.cache_data(ttl=5)
-def load_table_data() -> tuple[list[dict], list[dict], list[dict], list[str]]:
+def load_table_data() -> tuple[list[dict], list[dict], list[dict], list[str], list[dict]]:
     """Load rows from Postgres via db.py helpers."""
     sell_rows = get_sell_order_details_sync()
     buy_rows = get_buy_order_details_sync()
     exec_rows = get_data_for_order_execution_sync()
     strategy_names = get_strategy_names_sync()
+    strategy_rows = get_strategy_rows_sync()
     for row in sell_rows:
         row["_createdAt_raw"] = row.get("createdAt")
         row["createdAt"] = _created_at_ist_display(row.get("_createdAt_raw"))
@@ -79,7 +81,7 @@ def load_table_data() -> tuple[list[dict], list[dict], list[dict], list[str]]:
     for row in exec_rows:
         row["_createdAt_raw"] = row.get("createdAt")
         row["createdAt"] = _created_at_ist_display(row.get("_createdAt_raw"))
-    return sell_rows, buy_rows, exec_rows, strategy_names
+    return sell_rows, buy_rows, exec_rows, strategy_names, strategy_rows
 
 
 
@@ -209,6 +211,10 @@ def _filter_sessions_by_exec_created_at(
             out.append((ex, buys, sells))
     return out
 
+
+def _normalized_value(value: object) -> str:
+    return str(value or "").strip()
+
 BUY_DISPLAY_COLS = [
     "createdAt",
     "user",
@@ -272,6 +278,7 @@ def render_linked_overview_tab(
     exec_rows: list[dict],
     buy_rows: list[dict],
     sell_rows: list[dict],
+    strategy_rows: list[dict],
 ) -> None:
     st.subheader("Sessions: execution snapshot → buy & sell legs")
     st.caption(
@@ -333,6 +340,63 @@ def render_linked_overview_tab(
         sessions, start_d, end_d, include_orphan_linked
     )
 
+    strategy_map = {str(r.get("id")): r for r in strategy_rows if r.get("id")}
+    sessions_enriched: list[tuple[dict, list[dict], list[dict], str, str, str]] = []
+    for ex, buys, sells in sessions_filtered:
+        strategy = strategy_map.get(str(ex.get("strategyId")))
+        strategy_name = (
+            (strategy or {}).get("strategy_name")
+            or ex.get("strategy_name")
+            or ex.get("strategy")
+        )
+        weekday = (strategy or {}).get("week_day") or ex.get("week_day")
+        exchange = ex.get("exchange") or (strategy or {}).get("exchange")
+        sessions_enriched.append(
+            (
+                ex,
+                buys,
+                sells,
+                _normalized_value(strategy_name),
+                _normalized_value(weekday),
+                _normalized_value(exchange),
+            )
+        )
+
+    strategy_filter_options = sorted({item[3] for item in sessions_enriched if item[3]})
+    weekday_filter_options = sorted({item[4] for item in sessions_enriched if item[4]})
+    exchange_filter_options = sorted({item[5] for item in sessions_enriched if item[5]})
+
+    ff1, ff2, ff3 = st.columns(3)
+    with ff1:
+        selected_strategy_names = st.multiselect(
+            "strategy_names",
+            options=strategy_filter_options,
+            default=[],
+            key="linked_strategy_names_filter",
+        )
+    with ff2:
+        selected_weekdays = st.multiselect(
+            "weekday",
+            options=weekday_filter_options,
+            default=[],
+            key="linked_weekday_filter",
+        )
+    with ff3:
+        selected_exchanges = st.multiselect(
+            "exchange",
+            options=exchange_filter_options,
+            default=[],
+            key="linked_exchange_filter",
+        )
+
+    sessions_filtered = [
+        (ex, buys, sells)
+        for ex, buys, sells, strategy_name, weekday, exchange in sessions_enriched
+        if (not selected_strategy_names or strategy_name in selected_strategy_names)
+        and (not selected_weekdays or weekday in selected_weekdays)
+        and (not selected_exchanges or exchange in selected_exchanges)
+    ]
+
     st.metric("Execution snapshots (DB total)", len(exec_rows))
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -347,11 +411,14 @@ def render_linked_overview_tab(
     st.metric(
         "Sessions in date range",
         len(sessions_filtered),
-        help=f"Execution `createdAt` between {start_d} and {end_d} (inclusive).",
+        help=(
+            f"Execution `createdAt` between {start_d} and {end_d} (inclusive), "
+            "then optional strategy/weekday/exchange filters."
+        ),
     )
 
     if not sessions_filtered:
-        st.info("No sessions match the selected `createdAt` range.")
+        st.info("No sessions match the selected filters.")
         if orphan_buys or orphan_sells:
             st.divider()
             st.subheader("Unlinked orders")
@@ -435,7 +502,7 @@ def render_linked_overview_tab(
 if st.button("Refresh Data"):
     st.cache_data.clear()
 
-sell_rows, buy_rows, exec_rows, strategy_names = load_table_data()
+sell_rows, buy_rows, exec_rows, strategy_names, strategy_rows = load_table_data()
 
 
 tab2, tab3, tab4, tab5, tab6 = st.tabs(
@@ -478,7 +545,7 @@ with tab4:
         st.dataframe(df_exec, use_container_width=True, hide_index=True)
 
 with tab5:
-    render_linked_overview_tab(exec_rows, buy_rows, sell_rows)
+    render_linked_overview_tab(exec_rows, buy_rows, sell_rows, strategy_rows)
 
 with tab6:
     st.subheader("Strategy names")
