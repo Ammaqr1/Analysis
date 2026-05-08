@@ -153,6 +153,14 @@ def _render_strategy_row_fields(
 def _is_strategy_data_row(row: dict) -> bool:
     return any(str(row.get(field) or "").strip() for field in STRATEGY_FIELDS[1:])
 
+
+def _missing_required_fields(values: dict) -> list[str]:
+    missing: list[str] = []
+    for field in STRATEGY_FIELDS:
+        if not str(values.get(field) or "").strip():
+            missing.append(field)
+    return missing
+
 st.set_page_config(page_title="Save strategy", layout="wide")
 st.title("Strategy manager")
 st.caption("First create a strategy name, then open it to manage rows under that name.")
@@ -217,21 +225,32 @@ add_tab, edit_tab, delete_tab = st.tabs(["Add new row", "Update row", "Delete ro
 
 with add_tab:
     st.caption("Add a new record under this strategy name.")
+    st.info(
+        "Time format instructions (24-hour):\n"
+        "- For hours before 10 AM, write `H:MM` (example: `9:00`, not `09:00`).\n"
+        "- For PM times, use 24-hour values (example: `14:00` for 2 PM).\n"
+        "- Apply this format for `start_time`, `end_time`, `at_time_money`, and `end_entry_time`."
+    )
     with st.form("add_strategy_form"):
         add_values = _render_strategy_row_fields("add_strategy", selected_name)
         submitted = st.form_submit_button("Add strategy row")
 
     if submitted:
-        try:
-            row = asyncio.run(create_strategy(add_values))
-            st.success("Strategy row added.")
-            st.json(row)
-            st.cache_data.clear()
-            _rerun()
-        except ValueError as exc:
-            st.error(str(exc))
-        except Exception as exc:
-            st.exception(exc)
+        missing_fields = _missing_required_fields(add_values)
+        if missing_fields:
+            labels = ", ".join(_field_label(field) for field in missing_fields)
+            st.error(f"All fields are mandatory. Missing: {labels}")
+        else:
+            try:
+                row = asyncio.run(create_strategy(add_values))
+                st.success("Strategy row added.")
+                st.json(row)
+                st.cache_data.clear()
+                _rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+            except Exception as exc:
+                st.exception(exc)
 
 with edit_tab:
     if not data_rows:
@@ -256,19 +275,24 @@ with edit_tab:
             submitted_update = st.form_submit_button("Update strategy row")
 
         if submitted_update:
-            try:
-                row = asyncio.run(update_strategy(selected_row["id"], update_values))
-                if row:
-                    st.success("Strategy row updated.")
-                    st.json(row)
-                    st.cache_data.clear()
-                    _rerun()
-                else:
-                    st.warning("No row was updated.")
-            except ValueError as exc:
-                st.error(str(exc))
-            except Exception as exc:
-                st.exception(exc)
+            missing_fields = _missing_required_fields(update_values)
+            if missing_fields:
+                labels = ", ".join(_field_label(field) for field in missing_fields)
+                st.error(f"All fields are mandatory. Missing: {labels}")
+            else:
+                try:
+                    row = asyncio.run(update_strategy(selected_row["id"], update_values))
+                    if row:
+                        st.success("Strategy row updated.")
+                        st.json(row)
+                        st.cache_data.clear()
+                        _rerun()
+                    else:
+                        st.warning("No row was updated.")
+                except ValueError as exc:
+                    st.error(str(exc))
+                except Exception as exc:
+                    st.exception(exc)
 
 with delete_tab:
     if not data_rows:
