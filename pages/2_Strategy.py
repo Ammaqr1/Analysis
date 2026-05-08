@@ -30,9 +30,12 @@ STRATEGY_FIELDS = [
     "stop_loss_price",
     "target_trigger_price_percentage",
     "stoploss_trigger_price_percentage",
+    "run",
 ]
 
 WEEKDAY_OPTIONS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+RUN_OPTIONS = ["on", "off"]
+EXCHANGE_OPTIONS = ["NSE", "BSE"]
 
 
 def _rerun() -> None:
@@ -53,6 +56,16 @@ def _weekday_index(value: object) -> int:
     return 0
 
 
+def _run_index(value: object) -> int:
+    value_text = str(value or "").strip().lower()
+    return 1 if value_text == "off" else 0
+
+
+def _exchange_index(value: object) -> int:
+    value_text = str(value or "").strip().upper()
+    return 1 if value_text == "BSE" else 0
+
+
 def _render_strategy_fields(prefix: str, defaults: dict | None = None) -> dict:
     defaults = defaults or {}
     values: dict[str, str] = {}
@@ -64,6 +77,20 @@ def _render_strategy_fields(prefix: str, defaults: dict | None = None) -> dict:
                 _field_label(field),
                 WEEKDAY_OPTIONS,
                 index=_weekday_index(defaults.get(field)),
+                key=f"{prefix}_{field}",
+            )
+        elif field == "exchange":
+            values[field] = container.selectbox(
+                _field_label(field),
+                EXCHANGE_OPTIONS,
+                index=_exchange_index(defaults.get(field)),
+                key=f"{prefix}_{field}",
+            )
+        elif field == "run":
+            values[field] = container.selectbox(
+                _field_label(field),
+                RUN_OPTIONS,
+                index=_run_index(defaults.get(field)),
                 key=f"{prefix}_{field}",
             )
         else:
@@ -97,6 +124,20 @@ def _render_strategy_row_fields(
                 _field_label(field),
                 WEEKDAY_OPTIONS,
                 index=_weekday_index(defaults.get(field)),
+                key=f"{prefix}_{field}",
+            )
+        elif field == "exchange":
+            values[field] = container.selectbox(
+                _field_label(field),
+                EXCHANGE_OPTIONS,
+                index=_exchange_index(defaults.get(field)),
+                key=f"{prefix}_{field}",
+            )
+        elif field == "run":
+            values[field] = container.selectbox(
+                _field_label(field),
+                RUN_OPTIONS,
+                index=_run_index(defaults.get(field)),
                 key=f"{prefix}_{field}",
             )
         else:

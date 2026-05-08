@@ -608,10 +608,12 @@ def _ensure_strategy_table_pg(conn) -> None:
                 "target_price" TEXT,
                 "stop_loss_price" TEXT,
                 "target_trigger_price_percentage" TEXT,
-                "stoploss_trigger_price_percentage" TEXT
+                "stoploss_trigger_price_percentage" TEXT,
+                "run" TEXT
             )
             """
         )
+        cur.execute('ALTER TABLE "Strategy" ADD COLUMN IF NOT EXISTS "run" TEXT')
     conn.commit()
 
 
@@ -669,6 +671,7 @@ STRATEGY_MUTABLE_COLUMNS = [
     "stop_loss_price",
     "target_trigger_price_percentage",
     "stoploss_trigger_price_percentage",
+    "run",
 ]
 
 STRATEGY_SELECT_COLUMNS = ["id", "createdAt", "updatedAt", *STRATEGY_MUTABLE_COLUMNS]
